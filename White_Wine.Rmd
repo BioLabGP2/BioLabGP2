@@ -1,0 +1,179 @@
+---
+title: "Group Project 2 - White Wine Quality"
+author: "Greta Bussmann (64557) and Teresa Pinto Coelho (64515)"
+output: pdf
+---
+HEADING: The development of a shiny app based on the 'winequality-white.csv' dataset.
+
+INTRODUCTION:
+Wine plays a significant role in Portuguese culture and history.With a wide range of varieties, Portugal has earned its reputation as a big wine producer.
+One of its most iconic wines is Vinho Verde, a fresh and light wine from the North of the country, with a long-standing tradition in the country (BKWineMagazine, 2022). Wine consumption is also a big part in Portuguese lifestyle, with the country holding the highest per capita wine consumption in the world. In the 2022/2023 season, it reached an impressive 52.5 liters per person (Statista, 2024). For comparison, Germans consume around 27.6 liters per capita annually (Statista, 2024). Portuguese wine isn’t just about heritage and tradition; it’s also a great subject for data-driven exploration. Looking at the chemical properties of wine and how they’re connected to quality can give us useful insights into production and maybe help us to choose the best wine for the next get-together.This analysis takes a closer look at Portuguese wines using modern statistical and data-driven techniques like Principal Component Analysis (PCA) and clustering.The focus is on finding patterns in the data, picking out the most important variables, and understanding how the chemical properties link to wine quality.
+
+
+DATASET:
+We chose to work with the 'winequality-white.csv' dataset from Cortez (2009). This dataset focuses on the white version of the 'Vinho Verde' and contains 4,898 total values classified into 12 variables that influence wine quality. The goal of this report is to explore the structure of the dataset by performing a Principal Component Analysis (PCA) and a K-means Cluster Analysis. The PCA will be used to reduce the dataset's dimensionality to identify key variables that impact wine quality. This reduction not only simplifies finding similarities between different wines but also retains as much variance as possible, while making it easier to interpret and manage large datasets.
+The K-means Cluster Analysis will help us to group wines based on their similarities, showing potential patterns or relationships within the data.
+After performing these two steps, we plan to create a Shiny App to make the data more accessible to other users and allow them an easier interaction and manipulation of the dataset.
+
+EXPLORING THE DATA:
+Before we start the analysis, we include the function 'knitr::opts_chunk$set(echo = TRUE). This ensures, that not only the result but also the code is shown in the Console, making it easier to follow each step of this analysis. If we would have used 'echo = False' instead of 'echo = TRUE' only the results would be visible, which might make the progress less transparent.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+We decided to analyze the "winequality-white" dataset in this project. To begin, we loaded the tidyverse library to make working with the data more efficient, and imported the winequality dataset.
+Our first step was to get an overview of the dataset. To achieve this, we used various R commands to investigate the structure of the dataset and its variables:
+```{r}
+library(tidyverse)  
+
+white_wine <- read.csv("winequality-white.csv", sep = ";")
+head(white_wine)
+str(white_wine)
+```
+From the results, we observe that the dataset contains 12 variables, all of which are important in the analysis of wine quality. These variables are: 'fixed.acidity'; 'volatile.acidity'; 'citric.acid'; 'residual sugar', 'chlorides'; ' free.sulfur.dioxide'; 'total.sulfur.dioxide'; 'density'; 'pH'; 'sulphates'; 'alcohol' and 'quality'.
+The last variable 'quality' needs to be excluded, because it is the target of the testing. Including would bias the results of the clustering. Besides it is an ordinal variable, not numeric.
+Although each variable has a different range of values we don´t have to scale the varaibles because we will do the PCA directly with a correlation matrix. The correlation matrix is already standarised, so scaling is not necessary in this case.
+```{r}
+white_wine2 <- white_wine[,1:11]  
+quality <- white_wine$quality 
+cor_ww <- cor(white_wine2)
+print(cor_ww)
+```
+Now we start performing PCA (Principal Component Analysis). PCA is a technique used to reduce the dimensionality of the dataset while retaining as much variance as possible. It transforms the original variables into a new set of uncorrelated variables known as principal components (PCs).  For this step, we use the 'princomp' function, which calculates the PCs of our dataset. We also use the 'cor = TRUE' instead of 'cor = False' to make sure, that a correlation matrix and not a covariance matrix is used. Using a correlation matrix gives all variables equal weight in the analysis, which is especially important when the variables have been scaled to standardize their ranges.
+The results of the PCA are then summarized using the 'summary()' function and plotted in a scree plot. This gives us a clear view of how much of the dataset's variance is captured by each principal component, helping us decide how many components to choose for further analysis (dimensionality reduction).
+```{r}
+pca_result <- princomp(white_wine2, cor = TRUE) 
+summary(pca_result)
+
+screeplot(pca_result, type = "lines", main = "Scree Plot")
+```
+The results of the PCA show the Principal components (Comp. 1 - Comp. 11), their standard derivation, their variance and their cumulative variance. The first principal component (Comp. 1) has the highest standard deviation (1.795), indicating that it has the greatest influence on the results. As we move to the following components, the standard deviation decreases, showing that the earlier components capture more of the variability in the data compared to the later ones. By looking at the proportion of variability, which represents how much of the original data variance is summarized by each principal component, we see the following:
+Comp. 1 accounts 29.29% of the total data variability, 
+Comp. 2 accounts 14.32%, 
+Comp. 3 accounts 11.11% and 
+Comp. 4 accounts 9.26%. 
+Together, these four components summarize to 63.98% of the total variability, making them a strong basis for further analysis.
+In addition, we applied the Kaiser Criterion to determine the number of principal components to keep, further. According to this criterion, we retain components with an eigenvalue greater than 1. This applies to Comp.1, Comp.2, Comp.3, and Comp.4. This is further supporting our decision to focus on these four components.
+Lastly we examined the results with a Scree-Plot. The Scree Plot suggests ending the analysis after the second principal component (Comp. 2), as indicated by the elbow point, where the curve decreases significantly. This suggests that the first 2 components capture the majority of the variance in the data. But due to the results of the other criteria, we decided to focus on the first four Principal components (Comp. 1, Comp. 2, Comp. 3 and Comp.4) during further analysations.
+We then created new dataset with just the four Principal Components we choose. This will be the base for our following analysis.
+```{r}
+pca_scores <- as.data.frame(pca_result$scores[, 1:4])
+print(pca_scores)
+```
+In the next step, we examined the loadings of the PCA. The loadings indicate how strongly each original variable contributes to a particular principal component (PC). A high value for a variable in a specific principal component means that this variable has a strong loading on that component (i.e., it has a high influence).
+This allows us to identify which variables are most influential in defining the components.
+```{r}
+loadings_matrix <- loadings(pca_result)
+print(loadings_matrix)  
+
+threshold <- 0.4
+important_vars <- rownames(loadings_matrix)[apply(abs(loadings_matrix[, 1:4]) >= threshold, 1, any)]
+cat("Important Variables for the First 4 PCs:\n")
+print(important_vars)
+```
+We analysed the results regarding the most important chemical properties regarding their influence on the 4 PCs. While analysing these results we realised that there are some free spaces, that is due to the fact that the loadings for these variables are close to zero, indicating that their influence on the PCs is negligible and can be excluded.
+Also the most influential chemical properties are summarised (over 0.4). 
+Here they are categorised for the 4 CPs:
+Comp. 1: density (0.512); total.sulfur.dioxide (0.407); residual.sugar (0.427) --> This component is especially correlated to these three variables, focusing on characteristics like sweetness and density of the wine.
+Comp. 2: fixed.acidity (0.588); pH (-0.581) --> This component describes the balance between fixed.acidity and pH, which are inversely correlated. The negative correlation with pH means that as pH decreases (more acidic), Comp. 2 increases. Conversely, the positive correlation with fixed acidity means that as fixed acidity increases, Comp. 2 also increases.
+Comp. 3: citricic.acid (0.504); sulphates (0.433); volatile.acid (-0.591)
+Comp. 4: chlorides (0.711); sulphates (0.442) --> This Component is associated to the mineral content of the wine.
+
+The PCA allowed us to extract meaningful information from a large dataset with numerous variables by reducing its dimensionality without changing the overall data patterns.
+This enables us to classify wines into different groups or types based on the selected four principal components.
+To further explore the dataset we perform an cluster analysis, to group wines with similar characteristics into clusters based on their PC scores. 
+There are different methods for clustering but we will use the k-means-clustering, because its e.g. suitable for our results from the PCA and flexible in the amount of clusters. 
+
+CLUSTER ANALYSIS:
+We first load the libraries we need for the analysis. Then we run 'set.seed(123)' to make our results reproducable and determine the number of cluster we wish for - 3.
+
+```{r}
+library(cluster)    
+library(factoextra) 
+
+set.seed(123) 
+kmeans_result <- kmeans(pca_scores, centers = 3)
+```
+After performing the clustering, we assign each wine to its respective cluster. To make sure that the clusters are treated as categorical variables during visualization, we save them as a factor using as.factor. This prevents them from being misinterpreted as numeric variables in plots or analyses.
+We also add the cluster information to the PCA-data. This allows us to analyze the clustering results within the reduced PCA space, making it possible to observe how the clusters are grouped based on the principal components.
+```{r}
+white_wine$Cluster <- as.factor(kmeans_result$cluster)
+pca_scores$Cluster <- as.factor(kmeans_result$cluster)
+```
+
+```{r}
+cat("Cluster Sizes:", kmeans_result$size, "\n")
+cat("Cluster Centers:\n")
+print(kmeans_result$centers)
+```
+The cluster analysis resulted in three clusters with different sizes. This suggests, that the data points are distributed relatively evenly across the clusters, which helps ensure balanced groupings.
+The cluster centers show the average values for each principal component (PC) in each cluster, helping us understand the differences between the wine groups. 
+Cluster 1: In Cluster 1, wines have a low score for Comp. 1 (-0.88), meaning they tend to have   lower density, residual sugar, and total sulfur dioxide. They also have a high score  for Comp. 2 (1.22), pointing to higher fixed acidity and lower pH, making these wines more acidic. For Comp. 3 (-0.03), the score is close to neutral, suggesting no strong  influence from variables like citric acid or volatile acidity. Comp. 4 (-0.03) also shows no significant mineral content differences.
+Cluster 2: In Cluster 2, wines have a very low Comp. 1 score (-1.36), showing even lower levels of density, residual sugar, and sulfur dioxide compared to Cluster 1. The low Comp.2 score (-0.88) means these wines have less acidity and a higher pH. Comp.3 (0.12) and Comp.4 (0.10) suggest slight influences from volatile acidity and mineral-related properties, but nothing very strong.
+Cluster 3: In Cluster 3, wines have a high Comp. 1 score (1.97), indicating higher density, residual sugar, and sulfur dioxide. Its Comp. 2 score (-0.16) is neutral to low, showing a balance between acidity and pH. Comp. 3 (-0.08) and Comp. 4 (-0.07) are also close to neutral, meaning this cluster doesn’t show strong deviations in taste-relevant or mineral characteristics.
+These cluster centers give us a clear idea of how the wines differ based on their chemical properties across all four choosen components.
+Beause we investigated a lower impact of the Comp. 3 and Comp. 4, which underlines our observations after the PCA, that Comp. 1 and 2 covers most of the variance in the data and because we want to simplify the visualisation to provide a clearer view on the data we decided to only show Comp. 1 and Comp. 2 in the plot.
+```{r}
+
+cluster_plot <- ggplot(pca_scores, aes(x = Comp.1, y = Comp.2, color = Cluster)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Clusters Based on PCA Results",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal()
+print(cluster_plot)
+```
+The scatter plot shows the first two principal components (Comp.1 and Comp.2) on the axes. These two components explain the largest portion of the variance (about 43.6%), so they give a good representation of the data in 2D. In 2D, it’s easier to see the clusters and how they’re grouped.
+The points are color-coded based on the clustering results:
+Cluster 1 (red) is mostly in the upper-left corner of the plot. It stands a bit on its own but overlaps slightly with Cluster 2.
+Cluster 2 (green) is in the lower-left corner.
+Cluster 3 (blue) is more spread out in the center of the plot compared to the other clusters.
+This underlines our analysis from the data above.
+Now, we want to put our results into the context of wine quality by understanding the quality differences between the clusters. For instance, a cluster with a higher mean quality (Mean_Quality) may potentially represent wines of higher quality. This insight is valuable for interpreting the clusters more effectively and connecting them to the underlying chemical properties of the wines.
+```{r}
+cluster_quality_summary <- white_wine %>%
+  group_by(Cluster) %>%
+  summarise(
+    Mean_Quality = mean(quality),
+    Median_Quality = median(quality),
+    Min_Quality = min(quality),
+    Max_Quality = max(quality),
+    Count = n()
+  )
+print(cluster_quality_summary)
+```
+The table shows the mean, the median, the min and the max of the quality as well as the ammount of wines in the certain cluster.
+Cluster 1: The wines in this cluster have an average to slightly above-average quality (5.88 of 9). Some wines reach very high quality scores (9), while others have lower ratings (3).
+Cluster 2: Cluster 2 has the highest average quality and could represent higher-quality wines (6.17). The median score of 6 indicates that many wines in this cluster are above average in quality.
+Cluster 3: This cluster has the lowest average quality (5.60). Suggesting that the wines in this Cluster may have simpler characteristics or fewer standout qualities.
+
+The quality differences by cluster can be visualised in a boxplot.
+```{r}
+ggplot(white_wine, aes(x = Cluster, y = quality, fill = Cluster)) +
+  geom_boxplot() +
+  labs(title = "Quality Distribution by Cluster",
+       x = "Cluster",
+       y = "Quality") +
+  theme_minimal()
+```
+Each cluster is represented on the x-axis, while the quality scores are on the y-axis. The boxplots are color-coded by cluster and show the median, quartiles, and any outliers for each cluster. This visualization helps compare the quality differences between clusters.
+The box-plot underlines our results from the data.
+
+Based on this data analysis we created a shiny app (file: ShinyApp.Rmd), so the dataset can be explored more interactively e.g. the Shiny-App can react directly to users inputs and updates the calculations or visualisations.
+
+
+CONCLUSION:
+The goal of the analysis was to understand the relationship between the chemical properties of Portuguese white wines and their quality. Using the "winequality-white.csv" dataset, we applied Principal Component Analysis (PCA) and K-means clustering to find patterns and group wines based on their chemical features.
+
+PCA helped us reduce the complexity of the data by focusing on the four most important components, which together explained about 64% of the variance in the dataset. We found that key factors like density, residual sugar, pH, and acidity had a significant influence on the wine quality. These results were useful for creating clusters of wines.
+
+The K-means clustering revealed three main groups of wines, each with its own characteristics. Cluster 1 had wines with lower density and higher acidity. Cluster 2 had wines with more balanced traits and better quality overall. Cluster 3 had wines with higher sugar and density and was the lowest in quality on average. These clusters showed us how the chemical structure of the wine can affect its quality.
+
+We also developed a Shiny app to make the analysis interactive. This app lets users explore the data and see how different chemical factors relate to wine quality.
+
+REFERENCES:
+BKWineMagazine (2022): The countries with the highest wine consumption per person in 2020. https://www.bkwine.com/features/more/wine-consumption-per-person-2020/ (last seen 18.12.2024)
+P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis:
+Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, Elsevier, 47(4):547-553, 2009. https://www.kaggle.com/datasets/piyushagni5/white-wine-quality (last seen 18.12.2024)
+statista (2024): Wine consumption per capita in Portugal from 2017/2018 to 2022/2023. https://www.statista.com/statistics/1393947/portugal-wine-consumption-per-capita/#:~:text=Wine%20consumption%20per%20capita%20in%20Portugal%202017%2F2018%2D2022%2F2023&text=In%20Portugal%2C%20wine%20consumption%20generally,consumption%20volume%20totaled%2058%20liters. (last seen 18.12.2024)
+statista (2024): Per capita consumption of wine in Germany from 2008 to 2023. https://www.statista.com/statistics/508812/wine-per-capita-consumption-germany/#:~:text=This%20statistic%20depicts%20the%20average,consumed%20per%20capita%20in%202023. (last seen 18.12.2024)

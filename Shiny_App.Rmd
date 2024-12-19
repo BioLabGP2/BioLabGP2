@@ -1,0 +1,103 @@
+---
+title: "Shiny APP"
+author: "Greta Bussmann (64557) and Teresa Pinto Coelho (64515)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+To create the Shiny app, we first loaded all the necessary libraries, including those for data manipulation, clustering, and visualization. Then, we read the CSV file again and made sure that only the first 11 columns (chemical properties) were used for the analysis, while the quality column was kept separate.
+Next, we implemented the Principal Component Analysis (PCA) and performed a k-means clustering analysis to group the wines based on their PCA scores.
+In the second step, we built an interactive user interface consisting of:
+a title to introduce the app; sidebar panels (a slider, to select the number of clusters; two dropdowns to choose the principal components (PCA) for the x-axis and y-axis of the scatter plot); a main panel (scatter plot of clusters in PCA; boxplot showing the distribution of wine quality scores across clusters; summary table with key statistics for each cluster).
+After setting this up we developed the server logic to make sure that the app (boxplot, table, scatter plot) adapts to changes. 
+Finally we run the app.
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(cluster)
+library(factoextra)
+
+white_wine <- read.csv("winequality-white.csv", sep = ";")
+white_wine2 <- white_wine[, 1:11]  # Features only
+quality <- white_wine$quality
+
+pca_result <- princomp(white_wine2, cor = TRUE)
+pca_scores <- as.data.frame(pca_result$scores[, 1:4])
+set.seed(123)
+kmeans_result <- kmeans(pca_scores, centers = 3)
+white_wine$Cluster <- as.factor(kmeans_result$cluster)
+pca_scores$Cluster <- as.factor(kmeans_result$cluster)
+
+ui <- fluidPage(
+  titlePanel("White Wine Quality Analysis"),
+
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("num_clusters", "Number of Clusters:", 
+                  min = 2, max = 5, value = 3),
+      selectInput("pca_x", "X-axis (PCA Component):", 
+                  choices = paste0("Comp.", 1:4), selected = "Comp.1"),
+      selectInput("pca_y", "Y-axis (PCA Component):", 
+                  choices = paste0("Comp.", 1:4), selected = "Comp.2")
+    ),
+
+    mainPanel(
+      plotOutput("cluster_plot"),
+      plotOutput("boxplot"),
+      tableOutput("cluster_summary")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # Reactive clustering
+  clustered_data <- reactive({
+    kmeans_result <- kmeans(pca_scores[, 1:4], centers = input$num_clusters)
+    pca_scores$Cluster <- as.factor(kmeans_result$cluster)
+    white_wine$Cluster <- as.factor(kmeans_result$cluster)
+    list(pca_scores = pca_scores, white_wine = white_wine)
+  })
+
+
+  output$cluster_plot <- renderPlot({
+    data <- clustered_data()
+    ggplot(data$pca_scores, aes_string(x = input$pca_x, y = input$pca_y, color = "Cluster")) +
+      geom_point(alpha = 0.6) +
+      labs(title = "Clusters Based on PCA", x = input$pca_x, y = input$pca_y) +
+      theme_minimal()
+  })
+
+
+  output$boxplot <- renderPlot({
+    data <- clustered_data()
+    ggplot(data$white_wine, aes(x = Cluster, y = quality, fill = Cluster)) +
+      geom_boxplot() +
+      labs(title = "Quality Distribution by Cluster", x = "Cluster", y = "Quality") +
+      theme_minimal()
+  })
+
+
+  output$cluster_summary <- renderTable({
+    data <- clustered_data()
+    data$white_wine %>%
+      group_by(Cluster) %>%
+      summarise(
+        Mean_Quality = mean(quality),
+        Median_Quality = median(quality),
+        Min_Quality = min(quality),
+        Max_Quality = max(quality),
+        Count = n()
+      )
+  })
+}
+shinyApp(ui = ui, server = server)
+
+```
+The shiny app we created allows users to explore the white wine dataset interactively. The app performs PCA and k-means clsutering to group wines based on their chemical properties. Users can visualize and analyze these clusters dynamically. The app provides the following functionalities:
+The users can adjust the number of clusters (2 to 5) via a slider to see how the clustering results change.
+A scatter plot shows the clusters in 2D, based on user-selected principal components (PCA scores). This shows the relationships between PCs and clusters. 
+A boxplot visualizes the distribution of wine quality scores for each cluster.
+A table shows key statistics (mean, median, min, max, and count) of wine quality for each cluster. This provides a detailed view of wine quality across clusters, helping identify trends and differences.
