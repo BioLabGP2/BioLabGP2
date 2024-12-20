@@ -1,0 +1,136 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-12-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(cluster)
+library(factoextra)
+
+# Load data
+white_wine <- read.csv("winequality-white.csv", sep = ";")
+white_wine2 <- white_wine[, 1:11]
+quality <- white_wine$quality
+
+# PCA and Clustering
+pca_result <- princomp(white_wine2, cor = TRUE)
+loadings_matrix <- as.data.frame(unclass(pca_result$loadings[, 1:4]))
+important_vars <- rownames(loadings_matrix)[apply(abs(loadings_matrix[, 1:4]) >= 0.4, 1, any)]
+pca_scores <- as.data.frame(pca_result$scores[, 1:4])
+set.seed(123)
+kmeans_result <- kmeans(pca_scores, centers = 3)
+white_wine$Cluster <- as.factor(kmeans_result$cluster)
+
+pca_scores$Cluster <- as.factor(kmeans_result$cluster)
+pca_scores$quality <- quality
+
+quality_descriptions <- c(
+  "3" = "Low quality wine",
+  "4" = "Below average quality wine",
+  "5" = "Average quality wine",
+  "6" = "Above average quality wine",
+  "7" = "Good quality wine",
+  "8" = "Very good quality wine",
+  "9" = "Excellent quality wine"
+)
+
+ui <- fluidPage(
+  titlePanel("Wine Recommendations for Merchants Based on PCA and Clusters"),
+
+  sidebarLayout(
+    sidebarPanel(
+      h3("Enter Key Variables (Loadings ≥ 0.4)"),
+      lapply(important_vars, function(var) {
+        numericInput(
+          inputId = var,
+          label = paste0(var, " (Min: ", round(min(white_wine[[var]]), 2), 
+                         ", Max: ", round(max(white_wine[[var]]), 2), ")"),
+          value = round(mean(white_wine[[var]]), 2),
+          step = 0.01
+        )
+      }),
+      actionButton("predict", "Find the perfect wine for your customer")
+    ),
+
+    mainPanel(
+      h4("Warnings"),
+      textOutput("warnings"),
+      h4("Quality Meanings"),
+      tableOutput("quality_description"),
+      h4("Similar Wines"),
+      tableOutput("similar_wines"),
+      h4("Visualization"),
+      plotOutput("cluster_plot")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  user_input_data <- reactive({
+    data.frame(
+      t(sapply(important_vars, function(var) input[[var]]))
+    )
+  })
+
+  output$warnings <- renderText({
+    req(input$predict)
+    input_data <- user_input_data()
+    warnings <- sapply(important_vars, function(var) {
+      min_val <- min(white_wine[[var]])
+      max_val <- max(white_wine[[var]])
+      if (input[[var]] < min_val) {
+        paste0(var, " is too low (Min: ", round(min_val, 2), ").")
+      } else if (input[[var]] > max_val) {
+        paste0(var, " is too high (Max: ", round(max_val, 2), ").")
+      } else {
+        NULL
+      }
+    })
+    warnings <- warnings[!sapply(warnings, is.null)]
+    if (length(warnings) > 0) {
+      paste(warnings, collapse = " ")
+    } else {
+      "All inputs are within valid ranges."
+    }
+  })
+
+  output$quality_description <- renderTable({
+    data.frame(
+      Quality = names(quality_descriptions),
+      Description = unname(quality_descriptions)
+    )
+  })
+
+  output$similar_wines <- renderTable({
+    req(input$predict)
+    input_data <- user_input_data()
+    dist_matrix <- dist(rbind(input_data, white_wine[important_vars]))
+    distances <- as.matrix(dist_matrix)[1, -1]
+    similar_indices <- order(distances)[1:5]
+    white_wine[similar_indices, c("quality", important_vars)]
+  })
+
+  output$cluster_plot <- renderPlot({
+    req(input$predict)
+    input_data <- user_input_data()
+    ggplot(pca_scores, aes(x = Comp.1, y = Comp.2, color = Cluster)) +
+      geom_point(alpha = 0.6) +
+      geom_point(data = data.frame(Comp.1 = input_data[[1]], Comp.2 = input_data[[2]]), 
+                 aes(x = Comp.1, y = Comp.2), color = "black", size = 4, shape = 17) +
+      labs(title = "Cluster Visualization", x = "Comp.1", y = "Comp.2") +
+      theme_minimal()
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
+```
+
+
